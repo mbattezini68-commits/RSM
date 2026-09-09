@@ -5,63 +5,63 @@ import (
 	"time"
 )
 
-// CicloAbordagem controla o histórico e os lembretes para cada alvo
-type CicloAbordagem struct {
-	NomeAlvo        string
-	TentativaAtual  int        // 1, 2 ou 3
+// CicloDadosInfra controla o histórico e os lembretes de tráfego pesado para cada alvo
+type CicloDadosInfra struct {
+	NomeAlvo        string  // Ex: Agencia Espacial / Operadora / Provedor de Cloud
+	TentativaAtual  int     // 1, 2 ou 3
 	UltimoContato   time.Time  
-	PerdaMensal     float64    // Quanto ele perde por mês no gargalo
+	VolumeTbMensal  float64 // Volume de dados gerado/trafegado por mês em Terabytes
+	CustoPorTb      float64 // Custo atual por Terabyte na infraestrutura deles
 }
 
-// DispararAbordagem simula o envio da mensagem com base no momento do ciclo
-func (c *CicloAbordagem) DispararAbordagem() {
+// DispararAbordagemInfra envia a proposta técnica e financeira focada em tráfego de dados
+func (c *CicloDadosInfra) DispararAbordagemInfra() {
 	switch c.TentativaAtual {
 	case 1:
 		c.TentativaAtual = 2
 		c.UltimoContato = time.Now()
-		fmt.Printf("[ABORDAGEM 1] Para: %s\n", c.NomeAlvo)
-		fmt.Println("Gostaria de usar meu sistema?")
-		fmt.Printf("Seu ganho seria de aproximadamente 25%% de otimização no seu fluxo atual.\n\n")
+		fmt.Printf("[HUNTER-INFRA] Destinatário: %s\n", c.NomeAlvo)
+		fmt.Printf("Volume mapeado: %.1f TB/mês de tráfego de dados.\n", c.VolumeTbMensal)
+		fmt.Println("Gostaria de usar meu sistema de roteamento otimizado em Go?")
+		fmt.Printf("Seu ganho estimado seria de 30%% de redução na latência e no custo de banda.\n\n")
 
 	case 2:
 		c.TentativaAtual = 3
 		c.UltimoContato = time.Now()
-		// 30 dias depois: calcula a economia acumulada no período
-		economia30Dias := c.PerdaMensal * 0.25
-		fmt.Printf("[ABORDAGEM 2 - 30 dias] Para: %s\n", c.NomeAlvo)
-		fmt.Printf("Você teria economizado R$ %.2f (25%%) nos últimos 30 dias usando meu sistema.\n", economia30Dias)
-		fmt.Println("Ainda deseja otimizar seu processo?\n")
+		// 30 dias depois: calcula o desperdício financeiro em tráfego de dados
+		custoMensalAtual := c.VolumeTbMensal * c.CustoPorTb
+		desperdicio30Dias := custoMensalAtual * 0.30
+		fmt.Printf("[HUNTER-INFRA - 30 dias] Destinatário: %s\n", c.NomeAlvo)
+		fmt.Printf("Nos últimos 30 dias, você perdeu aproximadamente R$ %.2f em sobrecarga de tráfego que poderia ter sido otimizada.\n", desperdicio30Dias)
+		fmt.Println("Ainda deseja otimizar o escoamento de dados da sua infraestrutura?\n")
 
 	case 3:
 		c.TentativaAtual = 4 // Marca como encerrado
-		// 60 dias após os 30 (total de 90 dias): balanço trimestral final
-		economia90Dias := (c.PerdaMensal * 3) * 0.25
-		fmt.Printf("[ABORDAGEM 3 - FIM DO CICLO / 90 dias] Para: %s\n", c.NomeAlvo)
-		fmt.Printf("Por fim... nos últimos 90 dias, você teria economizado R$ %.2f.\n", economia90Dias)
-		fmt.Println("Oportunidade encerrada. A infraestrutura está disponível caso decida evoluir.")
+		// 60 dias após os 30 (total de 90 dias): balanço trimestral final de tráfego
+		custoMensalAtual := c.VolumeTbMensal * c.CustoPorTb
+		desperdicio90Dias := (custoMensalAtual * 3) * 0.30
+		fmt.Printf("[HUNTER-INFRA - FIM DO CICLO / 90 dias] Destinatário: %s\n", c.NomeAlvo)
+		fmt.Printf("Balanço trimestral: nos últimos 90 dias, o custo excedente de banda acumulou R$ %.2f.\n", desperdicio90Dias)
+		fmt.Println("Oportunidade encerrada. A infraestrutura descentralizada em Go permanece em repouso.")
 		fmt.Println("--------------------------------------------------\n")
 	}
 }
 
 func main() {
-	// Simulando um alvo detectado pelo robô
-	alvo := CicloAbordagem{
-		NomeAlvo:       "Sistema Comercial / Comércio Parceiro",
+	// Exemplo de um alvo de grande volume de dados detectado pelo robô
+	alvoInfra := CicloDadosInfra{
+		NomeAlvo:       "Centro de Telemetria / Infraestrutura de Dados de Alta Escala",
 		TentativaAtual: 1,
-		PerdaMensal:    2000.00, // Exemplo de perda mensal estimada no gargalo
+		VolumeTbMensal: 150.0, // Exemplo: 150 Terabytes trafegados por mês
+		CustoPorTb:     800.0, // Exemplo de custo por Terabyte
 	}
 
 	// 1º Contato imediato
-	alvo.DispararAbordagem()
+	alvoInfra.DispararAbordagemInfra()
 
-	// (Simulando o passar de 30 dias para o segundo contato)
-	alvo.DispararAbordagem()
+	// (Simulando a passagem de 30 dias)
+	alvoInfra.DispararAbordagemInfra()
 
-	// (Simulando o passar de mais 60 dias para o balanço final de 90 dias)
-	alvo.DispararAbordagem()
-	
-	// Tentativa seguinte (já encerrado, o robô ignora)
-	if alvo.TentativaAtual > 3 {
-		fmt.Println("[ROBÔ] Alvo finalizado. Nenhuma nova mensagem será enviada.")
-	}
+	// (Simulando o balanço final de 90 dias)
+	alvoInfra.DispararAbordagemInfra()
 }
