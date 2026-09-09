@@ -1,8 +1,11 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
+	"net/http"
+	"time"
 )
 
 const (
@@ -10,20 +13,59 @@ const (
 	PI = math.Pi
 )
 
-// AlvoInfraEspacial representa a infraestrutura pesada de dados (satélites, telemetria, redes de alta escala)
 type AlvoInfraEspacial struct {
-	NomeAlvo      string
-	EdgeID        string  // Identificador da borda (ex: DSN_GOLDSTONE)
-	NoradID       int     // ID do satélite / infra
-	FreqHz        float64 // Frequência em Hz (ex: X-band 8.45 GHz)
-	DistReal      float64 // Distância em metros (mínimo 384.400km ou LEO)
-	BandaHz       float64 // Largura de banda em Hz
-	JanelaSeg     float64 // Janela de tempo em segundos
-	NivelRuido    float64 // Ruído de 0 a 1000
-	Tentativa     int     // 1, 2 ou 3 (Cadência comercial)
+	NomeAlvo      string  `json:"OBJECT_NAME"`
+	NoradID       int     `json:"NORAD_CAT_ID"`
+	FreqHz        float64 
+	DistReal      float64 
+	BandaHz       float64 
+	JanelaSeg     float64 
+	NivelRuido    float64 
+	Tentativa     int     
 }
 
-// 1. MOTOR DE CÁLCULO DE RAIO E VOLUME (Física de Propagação)
+type SateliteAPI struct {
+	NomeAlvo string `json:"OBJECT_NAME"`
+	NoradID  int    `json:"NORAD_CAT_ID"`
+}
+
+func BuscarAlvoRealDoMundo(noradID int) (*AlvoInfraEspacial, error) {
+	url := fmt.Sprintf("https://celestrak.org/NORAD/elements/gp.php?CATNR=%d&FORMAT=json", noradID)
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Get(url)
+	if err != nil {
+		return nil, fmt.Errorf("falha ao conectar com a API externa: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API retornou status code inesperado: %d", resp.StatusCode)
+	}
+
+	var resultado []SateliteAPI
+	decoder := json.NewDecoder(resp.Body)
+	if err := decoder.Decode(&resultado); err != nil {
+		return nil, fmt.Errorf("falha ao decodificar JSON real: %v", err)
+	}
+
+	if len(resultado) == 0 {
+		return nil, fmt.Errorf("nenhum alvo encontrado para o NORAD ID %d", noradID)
+	}
+
+	alvoReal := &AlvoInfraEspacial{
+		NomeAlvo:   resultado[0].NomeAlvo,
+		NoradID:    resultado[0].NoradID,
+		FreqHz:     8450000000.0,
+		DistReal:   550000.0,     
+		BandaHz:    2000000.0,    
+		JanelaSeg:  600.0,        
+		NivelRuido: 720.0,        
+		Tentativa:  1,
+	}
+
+	return alvoReal, nil
+}
+
 func (a *AlvoInfraEspacial) calculaRaioMM() float64 {
 	return math.Sqrt(C * a.DistReal * 1e6 / (a.FreqHz * 4))
 }
@@ -35,7 +77,7 @@ func (a *AlvoInfraEspacial) calculaVolumeBolhaComRuido() (vol, raio float64) {
 	
 	fatorRuido := (1000.0 - a.NivelRuido) / 1000.0
 	if a.NivelRuido > 900 { 
-		fatorRuido = 0.1 // Muito ruído = bolha menor mas mais densa
+		fatorRuido = 0.1 
 	}
 	
 	vol = volBase * fatorRuido
@@ -43,10 +85,9 @@ func (a *AlvoInfraEspacial) calculaVolumeBolhaComRuido() (vol, raio float64) {
 	return vol, raio
 }
 
-// 2. TRAVA DE SEGURANÇA DA BORDA (Garante zero desperdício de gás off-chain)
 func (a *AlvoInfraEspacial) podeEstourar(wVol, economiaBits float64) bool {
 	if a.BandaHz <= 0 || a.JanelaSeg <= 0 || a.NivelRuido < 0 || a.NivelRuido > 1000 {
-		fmt.Printf("[DAEMON SEGURANÇA] Parâmetros de rede inválidos no Edge %s.\n", a.EdgeID)
+		fmt.Printf("[DAEMON SEGURANÇA] Parâmetros de rede inválidos para o alvo real.\n")
 		return false
 	}
 	
@@ -58,22 +99,20 @@ func (a *AlvoInfraEspacial) podeEstourar(wVol, economiaBits float64) bool {
 	return true
 }
 
-// 3. PROCESSAMENTO MATEMÁTICO COMPLETO
 func (a *AlvoInfraEspacial) ProcessarMetricas() (wVol, economiaBits, tempoEconomizado, volBolha float64) {
 	volBolha, raioMM := a.calculaVolumeBolhaComRuido()
 	volCilindro := PI * math.Pow(raioMM/1000.0, 2) * a.DistReal * ((1000.0 - a.NivelRuido) / 1000.0)
 	
 	wVol = math.Abs(volCilindro - volBolha)
 
-	bitsSem := a.BandaHz * a.JanelaSeg * 0.5 // Eficiência base com ruído
-	bitsCom := bitsSem * 3.5                 // Ganho volumétrico da bolha
+	bitsSem := a.BandaHz * a.JanelaSeg * 0.5 
+	bitsCom := bitsSem * 3.5                 
 	economiaBits = math.Abs(bitsSem - bitsCom)
 	tempoEconomizado = economiaBits / a.BandaHz
 
 	return wVol, economiaBits, tempoEconomizado, volBolha
 }
 
-// 4. ROBÔ CAÇADOR COM CADÊNCIA COMERCIAL DE 3 TOQUES
 func (a *AlvoInfraEspacial) ExecutarCadencia() {
 	wVol, economiaBits, tempoEco, volBolha := a.ProcessarMetricas()
 
@@ -85,7 +124,7 @@ func (a *AlvoInfraEspacial) ExecutarCadencia() {
 	switch a.Tentativa {
 	case 1:
 		a.Tentativa = 2
-		fmt.Printf("=== [HUNTER - ABORDAGEM 1] Alvo: %s (NORAD: %d) ===\n", a.NomeAlvo, a.NoradID)
+		fmt.Printf("=== [HUNTER MUNDO REAL - ABORDAGEM 1] Alvo: %s (NORAD: %d) ===\n", a.NomeAlvo, a.NoradID)
 		fmt.Printf("Volume Bolha P_vol: %.2e m3 | Raio Fresnel: %.2f m\n", volBolha, a.calculaRaioMM()/1000.0)
 		fmt.Println("Gostaria de usar meu sistema de roteamento otimizado em Go?")
 		fmt.Printf("Ganho técnico: %.2f s economizados na janela de %.0f s (%.1f%% de ganho de banda).\n\n", 
@@ -94,16 +133,16 @@ func (a *AlvoInfraEspacial) ExecutarCadencia() {
 	case 2:
 		a.Tentativa = 3
 		acumulado30Dias := economiaBits * 30
-		fmt.Printf("=== [HUNTER - ABORDAGEM 2 / 30 DIAS] Alvo: %s ===\n", a.NomeAlvo)
+		fmt.Printf("=== [HUNTER MUNDO REAL - ABORDAGEM 2 / 30 DIAS] Alvo: %s ===\n", a.NomeAlvo)
 		fmt.Printf("Nos últimos 30 dias, sua infraestrutura perdeu aproximadamente %.0f bits em sobrecarga evitável.\n", acumulado30Dias)
 		fmt.Println("Ainda deseja otimizar o escoamento de dados da sua operação?\n")
 
 	case 3:
-		a.Tentativa = 4 // Fim do ciclo
+		a.Tentativa = 4 
 		acumulado90Dias := economiaBits * 90
-		mintSugerido := wVol * 1e6 * 0.97 // 3% royalty deduzido / 47% burn aplicado
+		mintSugerido := wVol * 1e6 * 0.97 
 		
-		fmt.Printf("=== [HUNTER - ABORDAGEM 3 / FIM DO CICLO 90 DIAS] Alvo: %s ===\n", a.NomeAlvo)
+		fmt.Printf("=== [HUNTER MUNDO REAL - ABORDAGEM 3 / FIM DO CICLO 90 DIAS] Alvo: %s ===\n", a.NomeAlvo)
 		fmt.Printf("Balanço trimestral: desperdício acumulado de %.0f bits.\n", acumulado90Dias)
 		fmt.Printf("PROVA NA PRÁTICA: W_vol > 0. Mint sugerido de %.0f BOLHA se converter agora.\n", mintSugerido)
 		fmt.Println("Oportunidade encerrada. Ciclo finalizado. A infraestrutura em Go permanece em repouso.")
@@ -112,22 +151,18 @@ func (a *AlvoInfraEspacial) ExecutarCadencia() {
 }
 
 func main() {
-	fmt.Println("=== MOTOR THE COLT: INFRAESTRUTURA ESPACIAL E DADOS ===")
-	fmt.Println("Modo de auditoria e prospecção ativado com segurança off-chain.\n")
+	fmt.Println("=== MOTOR THE COLT: CONECTOR DE MUNDO REAL ATIVADO ===")
+	fmt.Println("Buscando dados reais de satélite/telemetria via API externa...\n")
 
-	alvo := AlvoInfraEspacial{
-		NomeAlvo:   "Centro de Telemetria Espacial",
-		EdgeID:     "DSN_GOLDSTONE",
-		NoradID:    25544,
-		FreqHz:     8450000000.0, // X-band 8.45 GHz
-		DistReal:   550000.0,     // 550 km LEO
-		BandaHz:    1000000.0,    // 1 MHz
-		JanelaSeg:  600.0,        // 10 minutos
-		NivelRuido: 750.0,        // Ruído alto
-		Tentativa:  1,
+	alvoReal, err := BuscarAlvoRealDoMundo(25544)
+	if err != nil {
+		fmt.Printf("[ERRO CRÍTICO] Falha ao obter alvo do mundo real: %v\n", err)
+		return
 	}
 
-	alvo.ExecutarCadencia() // Toque 1
-	alvo.ExecutarCadencia() // Toque 2 (30 dias)
-	alvo.ExecutarCadencia() // Toque 3 (90 dias)
+	fmt.Printf("[SUCESSO] Alvo real carregado da rede: %s (NORAD ID: %d)\n\n", alvoReal.NomeAlvo, alvoReal.NoradID)
+
+	alvoReal.ExecutarCadencia() 
+	alvoReal.ExecutarCadencia() 
+	alvoReal.ExecutarCadencia() 
 }
