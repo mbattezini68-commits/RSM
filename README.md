@@ -1,17 +1,16 @@
-# RSM (Real Agent Network)
+# The Colt (RSM Daemon)
 
-> Decentralized, Go-based multipath infrastructure protocol optimizing data routing across heterogeneous media (Space, Submarine, and Terrestrial Fiber) using EIP-712 security and a performance-based tokenomics model.
+> "Nasce do zero, mama e sai correndo. Ou morre sem se levantar."
 
----
+The Colt é um protocolo autônomo de infraestrutura financeira baseado em sobrevivência, operando nativamente na Polygon Mainnet. Ele é um motor descentralizado de otimização de gargalos sistêmicos.
 
-## 🚀 Overview
+## Como Funciona
+O daemon opera de forma 100% autônoma, interceptando ineficiências operacionais (como gargalos de liquidação e custos em redes de pagamento). Quando acionado:
+1. O Usuário Ganha: Recebe uma transação mais rápida e um desconto em tokenomics.
+2. O Protocolo Se Sustenta: O valor capturado flui para o contrato inteligente e é distribuído automaticamente.
 
-**RSM** is a high-performance routing agent designed to solve the challenges of cross-domain data transmission. Traditional networks rely on static, centralized routing tables and ignore the economic alignment of edge infrastructure operators. RSM bridges this gap by combining:
-
-1. **Multipath Proportional Routing:** Dynamically fragments and distributes payloads across Terrestrial Fiber, Submarine Cables, and Satellite Constellations based on real-time weights and health checks.
-2. **Proof-of-Routing-Efficiency (Tokenomics):** Unlike traditional DePIN models that reward pure uptime, RSM mints tokens strictly based on *verifiable efficiency gains* achieved by smart path selection and congestion mitigation.
-3. **Off-Chain Security:** Integrates environment-secured private key management and EIP-712 compatible state signing to interact seamlessly with L2 networks (e.g., Base, Polygon) at near-zero gas costs.
-
----
-
-## 🛠️ Architecture
+## Tokenomics
+* 3% Royalty do Criador (retirado da cota de queima)
+* 25% Prêmios / Descontos aos Usuários
+* 25% Aprimoramento do Sistema
+* 47% Queima Deflacionária

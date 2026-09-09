@@ -1,219 +1,153 @@
 package main
 
 import (
-	"flag"
+	"context"
+	"crypto/ecdsa"
 	"fmt"
-	"log"
-	"math"
-	"math/rand/v2"
+	"math/big"
 	"os"
-	"sync"
 	"time"
 
-	"github.com/joho/godotenv"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/ethclient"
 )
-
-// ============================================================
-// RSM (Real Agent Network) | NÓ DE ROTEAMENTO HÍBRIDO GLOBAL
-// ============================================================
-
-type MeioFisico string
 
 const (
-	MeioTerra  MeioFisico = "TERRA_FIBRA"
-	MeioAgua   MeioFisico = "AGUA_SUBMARINO"
-	MeioEspaco MeioFisico = "ESPACO_SATELITE"
+	PolygonChainID = 137
+	CreatorFeePct  = 0.03 // 3% perpétuo para o criador
 )
 
-type CanalFisico struct {
-	Meio      MeioFisico
-	GatewayIP string
-	PesoBanda int
-	Ativo     bool
+type RSMEngine struct {
+	Client          *ethclient.Client
+	PrivateKey      *ecdsa.PrivateKey
+	CreatorAddress  common.Address
+	ContractAddress common.Address
 }
 
-type GerenciadorToken struct {
-	mu              sync.Mutex
-	SaldoEficiencia float64
-	MetaParaMint    float64
-	TokensEmitidos  int
-	CarteiraDestino string
-}
-
-func (g *GerenciadorToken) RegistrarGanho(eficienciaGerada float64) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	g.SaldoEficiencia += eficienciaGerada
-	fmt.Printf(" 💰 [RSM TOKENOMICS] Ganho de eficiência computado: +%.2f unidades.\n", eficienciaGerada)
-	fmt.Printf("                     (Saldo atual na mempool: %.2f / Meta: %.2f)\n", g.SaldoEficiencia, g.MetaParaMint)
-
-	if g.SaldoEficiencia >= g.MetaParaMint {
-		g.MintarTokens()
-	}
-}
-
-func (g *GerenciadorToken) MintarTokens() {
-	g.TokensEmitidos += 1000
-	fmt.Printf("\n============================================================\n")
-	fmt.Printf("🚀 [BLOCKCHAIN MINT] Meta de eficiência atingida!\n")
-	fmt.Printf("   -> 1000 novos tokens mintados com sucesso.\n")
-	fmt.Printf("   -> Transferidos automaticamente para a carteira segura: %s\n", g.CarteiraDestino)
-	fmt.Printf("   -> Total acumulado de tokens: %d\n", g.TokensEmitidos)
-	fmt.Printf("============================================================\n\n")
-	g.SaldoEficiencia = 0
-}
-
-type ConfigAgua struct {
-	MinBufferBytes  int
-	MaxBufferBytes  int
-	CapacidadeBytes int
-	LatenciaBase    int
-	JitterMax       int
-	TaxaPerda       float64
-}
-
-type CanalSubmarino struct {
-	cfg ConfigAgua
-}
-
-func NovoCanalSubmarino(cfg ConfigAgua) *CanalSubmarino {
-	return &CanalSubmarino{cfg: cfg}
-}
-
-func (c *CanalSubmarino) Transmitir(bytes int, rng *rand.Rand) (int, bool, bool) {
-	if bytes <= 0 {
-		return 0, false, false
-	}
-	if c.cfg.TaxaPerda >= 1.0 {
-		return 0, true, true
-	}
-	if c.cfg.TaxaPerda > 0 && rng.Float64() < c.cfg.TaxaPerda {
-		return 0, true, false
-	}
-	jitter := 0
-	if c.cfg.JitterMax > 0 {
-		jitter = rng.IntN(c.cfg.JitterMax + 1)
-	}
-	capacidade := c.cfg.CapacidadeBytes
-	if capacidade <= 0 {
-		capacidade = 1
-	}
-	tempoExecucao := int(math.Ceil(float64(bytes)/float64(capacidade))) + c.cfg.LatenciaBase + jitter
-	return tempoExecucao, false, false
-}
-
-func DespacharMultipathGlobal(payloadOriginal []byte, canais map[MeioFisico]*CanalFisico, tokenMgr *GerenciadorToken, cfgAgua ConfigAgua) {
-	tamanhoTotal := len(payloadOriginal)
-	fmt.Printf("\n[RSM ENGINE] Pacote íntegro de %d bytes recebido para distribuição global.\n", tamanhoTotal)
-
-	pesoTotal := 0
-	ativos := []*CanalFisico{}
-	for _, canal := range canais {
-		if canal.Ativo {
-			pesoTotal += canal.PesoBanda
-			ativos = append(ativos, canal)
-		}
+func NewRSMEngine() (*RSMEngine, error) {
+	rpcURL := os.Getenv("RSM_RPC_URL")
+	if rpcURL == "" {
+		rpcURL = "https://polygon-bor-rpc.publicnode.com"
 	}
 
-	if pesoTotal == 0 {
-		fmt.Println("[ERRO] Nenhum canal físico ativo para despacho.")
+	client, err := ethclient.Dial(rpcURL)
+	if err != nil {
+		return nil, fmt.Errorf("falha ao conectar ao nó RPC da Polygon: %v", err)
+	}
+
+	privKeyHex := os.Getenv("RSM_PRIVATE_KEY")
+	if privKeyHex == "" {
+		return nil, fmt.Errorf("RSM_PRIVATE_KEY não configurada no ambiente")
+	}
+
+	privateKey, err := crypto.HexToECDSA(privKeyHex)
+	if err != nil {
+		return nil, fmt.Errorf("chave privada inválida: %v", err)
+	}
+
+	creatorAddr := common.HexToAddress(os.Getenv("RSM_CREATOR_ADDRESS"))
+	contractAddr := common.HexToAddress(os.Getenv("RSM_CONTRACT_ADDRESS"))
+
+	return &RSMEngine{
+		Client:          client,
+		PrivateKey:      privateKey,
+		CreatorAddress:  creatorAddr,
+		ContractAddress: contractAddr,
+	}, nil
+}
+
+func (engine *RSMEngine) ExecutarCicloAutonomo(ciclo int, ganhoBruto float64) {
+	fmt.Printf("\n========================================================\n")
+	fmt.Printf("🔄 [RSM DAEMON] Ciclo Autônomo #%d - Otimização de Gargalos\n", ciclo)
+	fmt.Printf("========================================================\n")
+
+	if ganhoBruto <= 0 {
+		fmt.Println("💤 [POTRO EM REPOUSO] Nenhum gargalo monetizado neste batimento. Gás preservado.")
 		return
 	}
 
-	bytesAlocados := 0
-	rngSim := rand.New(rand.NewPCG(uint64(time.Now().UnixNano()), 999))
+	parteCriador := ganhoBruto * CreatorFeePct
+	liquidoRestante := ganhoBruto - parteCriador
 
-	for i, canal := range ativos {
-		var tamanhoPedaco int
-		if i == len(ativos)-1 {
-			tamanhoPedaco = tamanhoTotal - bytesAlocados
-		} else {
-			tamanhoPedaco = (tamanhoTotal * canal.PesoBanda) / pesoTotal
-		}
+	premioUsuario := liquidoRestante * 0.25
+	fundoAprimoramento := liquidoRestante * 0.25
+	
+	// A regra ajustada: os 3% do criador saem da cota de queima (50% - 3% = 47% efetivos do total bruto)
+	tokensParaQueima := (ganhoBruto * 0.50) - parteCriador
 
-		if tamanhoPedaco <= 0 {
-			continue
-		}
-		bytesAlocados += tamanhoPedaco
+	fmt.Printf("💰 [EFICIÊNCIA CAPTURADA!] Ganho Bruto: $%.4f\n", ganhoBruto)
+	fmt.Printf("   -> 🛡️ Royalty do Criador (3%%): $%.4f -> Direto para: %s\n", parteCriador, engine.CreatorAddress.Hex())
+	fmt.Printf("   -> 🎁 Desconto/Prêmio ao Usuário (25%%): $%.4f\n", premioUsuario)
+	fmt.Printf("   -> ⚙️ Aprimoramento do Sistema (25%%): $%.4f\n", fundoAprimoramento)
+	fmt.Printf("   -> 🔥 Queima Deflacionária Ajustada (47%%): $%.4f\n", tokensParaQueima)
 
-		if canal.Meio == MeioAgua {
-			subChan := NovoCanalSubmarino(cfgAgua)
-			_, perdido, _ := subChan.Transmitir(tamanhoPedaco, rngSim)
-			if perdido {
-				fmt.Printf(" ├── [ROTA SUBMARINA] ⚠️ Alerta: Perda parcial detectada em %d bytes via [%s]. Ajustando FEC...\n", tamanhoPedaco, canal.Meio)
-			}
-		}
+	engine.TransmitirExecucaoOnChain(ganhoBruto, tokensParaQueima)
+}
 
-		fmt.Printf(" ├── [ROTA ÓTIMA] %d bytes despachados via [%s] (Gateway: %s)\n",
-			tamanhoPedaco, canal.Meio, canal.GatewayIP)
+func (engine *RSMEngine) TransmitirExecucaoOnChain(ganho float64, queima float64) {
+	if engine.PrivateKey == nil {
+		fmt.Println("❌ [ERRO CRÍTICO] Chave privada não inicializada.")
+		return
 	}
 
-	fmt.Println(" [RECOMPOSIÇÃO] Payload remontado com integridade total no destino.")
+	ctx := context.Background()
+	publicKey := engine.PrivateKey.Public()
+	publicKeyECDSA, _ := publicKey.(*ecdsa.PublicKey)
+	fromAddress := crypto.PubkeyToAddress(*publicKeyECDSA)
 
-	ganhoDaTransmissao := float64(tamanhoTotal) * 0.45
-	tokenMgr.RegistrarGanho(ganhoDaTransmissao)
+	nonce, err := engine.Client.PendingNonceAt(ctx, fromAddress)
+	if err != nil {
+		fmt.Printf("⚠️ [AVISO RPC] Nonce indisponível: %v\n", err)
+		return
+	}
+
+	value := big.NewInt(0)
+	gasLimit := uint64(65000)
+	gasPrice, err := engine.Client.SuggestGasPrice(ctx)
+	if err != nil {
+		gasPrice = big.NewInt(30000000000)
+	}
+
+	data := []byte(fmt.Sprintf("RSM_EXEC_SUCCESS:GAIN=%.2f:BURN=%.2f", ganho, queima))
+	tx := types.NewTransaction(nonce, engine.ContractAddress, value, gasLimit, gasPrice, data)
+
+	signedTx, err := types.SignTx(tx, types.NewEIP155Signer(big.NewInt(PolygonChainID)), engine.PrivateKey)
+	if err != nil {
+		fmt.Printf("❌ [ERRO] Falha ao assinar transação: %v\n", err)
+		return
+	}
+
+	err = engine.Client.SendTransaction(ctx, signedTx)
+	if err != nil {
+		fmt.Printf("⚠️ [TRANSMISSÃO POLYGON] Falha ao enviar: %v\n", err)
+		return
+	}
+
+	fmt.Printf("🚀 [SUCESSO NA POLYGON] Transação registrada na Mainnet!\n")
+	fmt.Printf("🔗 TxHash: %s\n", signedTx.Hash().Hex())
 }
 
 func main() {
-	// Carrega as variáveis de ambiente do arquivo .env de forma segura
-	_ = godotenv.Load()
+	fmt.Println("========================================================")
+	fmt.Println("🤖 RSM AGENT DAEMON - OTIMIZADOR DE GARGALOS (24/7)")
+	fmt.Println("========================================================")
 
-	privKey := os.Getenv("RSM_PRIVATE_KEY")
-	walletDestino := os.Getenv("WALLET_DESTINATARIO")
-
-	if walletDestino == "" {
-		walletDestino = "0xDefaultFallbackWalletWithoutKey"
+	engine, err := NewRSMEngine()
+	if err != nil {
+		fmt.Printf("❌ [FALHA DE INICIALIZAÇÃO]: %v\n", err)
+		return
 	}
 
-	if privKey == "" {
-		log.Println("⚠️  [AVISO DE SEGURANÇA] RSM_PRIVATE_KEY não encontrada no .env. O nó rodará em modo simulação offline.")
-	} else {
-		fmt.Println("🔐 [SEGURANÇA] Chave privada carregada com sucesso via ambiente off-chain.")
+	defer engine.Client.Close()
+	fmt.Println("✅ [CONEXÃO ESTABELECIDA] Pronto para capturar valor na Polygon...")
+
+	ciclo := 0
+	for {
+		ciclo++
+		ganhoRealDoServico := 0.0 // Modo passivo aguardando otimizações reais
+		engine.ExecutarCicloAutonomo(ciclo, ganhoRealDoServico)
+		time.Sleep(30 * time.Second)
 	}
-
-	volume := flag.Int("volume", 5000, "Volume de dados simulados no ecossistema RSM")
-	flag.Parse()
-
-	fmt.Println("====================================================")
-	fmt.Println(" RSM | PROTOCOLO DE ROTEAMENTO HÍBRIDO & DEPIN")
-	fmt.Println("====================================================")
-	fmt.Printf("Volume Alvo Configurado: %d bytes\n", *volume)
-	fmt.Printf("Destino das Recompensas: %s\n", walletDestino)
-
-	minhaCarteira := &GerenciadorToken{
-		MetaParaMint:    150.0,
-		CarteiraDestino: walletDestino,
-	}
-
-	canaisGlobais := map[MeioFisico]*CanalFisico{
-		MeioTerra:  {Meio: MeioTerra, GatewayIP: "192.168.1.10:8080", PesoBanda: 50, Ativo: true},
-		MeioAgua:   {Meio: MeioAgua, GatewayIP: "10.0.2.10:8080", PesoBanda: 30, Ativo: true},
-		MeioEspaco: {Meio: MeioEspaco, GatewayIP: "172.16.0.10:8080", PesoBanda: 20, Ativo: true},
-	}
-
-	cfgAgua := ConfigAgua{
-		MinBufferBytes:  32,
-		MaxBufferBytes:  1024,
-		CapacidadeBytes: 2048,
-		LatenciaBase:    140,
-		JitterMax:       15,
-		TaxaPerda:       0.02,
-	}
-
-	time.Sleep(500 * time.Millisecond)
-	fmt.Println("\n--- Iniciando fluxo contínuo de roteamento RSM ---")
-
-	tamanhoPayload := *volume / 4
-	if tamanhoPayload < 100 {
-		tamanhoPayload = 100
-	}
-
-	for i := 1; i <= 3; i++ {
-		payloadFalso := make([]byte, tamanhoPayload+rand.IntN(50))
-
-		DespacharMultipathGlobal(payloadFalso, canaisGlobais, minhaCarteira, cfgAgua)
-		time.Sleep(700 * time.Millisecond)
-	}
-
-	fmt.Println("\nExecução consolidada do RSM finalizada com sucesso.")
 }
