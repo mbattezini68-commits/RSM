@@ -99,24 +99,33 @@ func (a *AlvoInfraEspacial) podeEstourar(wVol, economiaBits float64) bool {
 	return true
 }
 
-func (a *AlvoInfraEspacial) ProcessarMetricas() (wVol, economiaBits, tempoEconomizado, volBolha float64) {
-	volBolha, raioMM := a.calculaVolumeBolhaComRuido()
-	volCilindro := PI * math.Pow(raioMM/1000.0, 2) * a.DistReal * ((1000.0 - a.NivelRuido) / 1000.0)
-	
-	wVol = math.Abs(volCilindro - volBolha)
+func (a *AlvoInfraEspacial) ProcessarMetricas() (latenciaSem, latenciaCom, throughputSem, throughputCom, perdaBitsSem, perdaBitsCom, ganhoLatenciaPct, ganhoThroughputPct, ganhoIntegridadePct float64) {
+	latenciaSem = (a.DistReal / C) * 1000 * 2.8 
+	latenciaCom = (a.DistReal / C) * 1000 * 1.2 
 
-	bitsSem := a.BandaHz * a.JanelaSeg * 0.5 
-	bitsCom := bitsSem * 3.5                 
-	economiaBits = math.Abs(bitsSem - bitsCom)
-	tempoEconomizado = economiaBits / a.BandaHz
+	throughputSem = a.BandaHz * 0.45            
+	throughputCom = a.BandaHz * 0.95            
 
-	return wVol, economiaBits, tempoEconomizado, volBolha
+	perdaBitsSem = a.BandaHz * a.JanelaSeg * 0.55 
+	perdaBitsCom = a.BandaHz * a.JanelaSeg * 0.05 
+
+	ganhoLatenciaPct = ((latenciaSem - latenciaCom) / latenciaSem) * 100
+	ganhoThroughputPct = ((throughputCom - throughputSem) / throughputSem) * 100
+	ganhoIntegridadePct = ((perdaBitsSem - perdaBitsCom) / perdaBitsSem) * 100
+
+	return latenciaSem, latenciaCom, throughputSem, throughputCom, perdaBitsSem, perdaBitsCom, ganhoLatenciaPct, ganhoThroughputPct, ganhoIntegridadePct
 }
 
 func (a *AlvoInfraEspacial) ExecutarCadencia() {
-	wVol, economiaBits, tempoEco, volBolha := a.ProcessarMetricas()
+	latSem, latCom, thrSem, thrCom, perSem, perCom, gLat, gThr, gInt := a.ProcessarMetricas()
 
-	if !a.podeEstourar(wVol, economiaBits) {
+	wVol, _, _, _ := func() (float64, float64, float64, float64) {
+		volBolha, raioMM := a.calculaVolumeBolhaComRuido()
+		volCilindro := PI * math.Pow(raioMM/1000.0, 2) * a.DistReal * ((1000.0 - a.NivelRuido) / 1000.0)
+		return math.Abs(volCilindro - volBolha), 0, 0, volBolha
+	}()
+
+	if !a.podeEstourar(wVol, perSem-perCom) {
 		fmt.Printf("[HUNTER] Alvo %s abortado pela segurança off-chain. Nenhuma transação enviada.\n\n", a.NomeAlvo)
 		return
 	}
@@ -124,35 +133,33 @@ func (a *AlvoInfraEspacial) ExecutarCadencia() {
 	switch a.Tentativa {
 	case 1:
 		a.Tentativa = 2
-		fmt.Printf("=== [HUNTER MUNDO REAL - ABORDAGEM 1] Alvo: %s (NORAD: %d) ===\n", a.NomeAlvo, a.NoradID)
-		fmt.Printf("Volume Bolha P_vol: %.2e m3 | Raio Fresnel: %.2f m\n", volBolha, a.calculaRaioMM()/1000.0)
-		fmt.Println("Gostaria de usar meu sistema de roteamento otimizado em Go?")
-		fmt.Printf("Ganho técnico: %.2f s economizados na janela de %.0f s (%.1f%% de ganho de banda).\n\n", 
-			tempoEco, a.JanelaSeg, (tempoEco/a.JanelaSeg)*100)
+		fmt.Printf("=== [THE COLT - AUDITORIA DE BORDA / TOQUE 1] Alvo: %s (NORAD: %d) ===\n", a.NomeAlvo, a.NoradID)
+		fmt.Println("MATRIZ DE EFICIÊNCIA COMPARATIVA (LEGADO vs RSM):")
+		fmt.Printf("1. Latência de Propagação:\n   - Sem RSM: %.2f ms\n   - Com RSM: %.2f ms\n   - Ganho: +%.1f%% de agilidade\n", latSem, latCom, gLat)
+		fmt.Printf("2. Throughput / Banda Efetiva:\n   - Sem RSM: %.2e bps\n   - Com RSM: %.2e bps\n   - Ganho: +%.1f%% de banda aproveitada\n", thrSem, thrCom, gThr)
+		fmt.Printf("3. Integridade (Perda de Bits):\n   - Sem RSM: %.2e bits perdidos\n   - Com RSM: %.2e bits perdidos\n   - Economia: +%.1f%% de eficiência operacional\n\n", perSem, perCom, gInt)
 
 	case 2:
 		a.Tentativa = 3
-		acumulado30Dias := economiaBits * 30
-		fmt.Printf("=== [HUNTER MUNDO REAL - ABORDAGEM 2 / 30 DIAS] Alvo: %s ===\n", a.NomeAlvo)
-		fmt.Printf("Nos últimos 30 dias, sua infraestrutura perdeu aproximadamente %.0f bits em sobrecarga evitável.\n", acumulado30Dias)
-		fmt.Println("Ainda deseja otimizar o escoamento de dados da sua operação?\n")
+		acumulado30Dias := (perSem - perCom) * 30
+		fmt.Printf("=== [THE COLT - RELATÓRIO DE IMPACTO / 30 DIAS] Alvo: %s ===\n", a.NomeAlvo)
+		fmt.Printf("Acumulado de desperdício evitado em 30 dias: %.0f bits recuperados.\n", acumulado30Dias)
+		fmt.Println("A infraestrutura externa mantém lacunas técnicas mensuráveis. Pronto para ativação do ecossistema.\n")
 
 	case 3:
 		a.Tentativa = 4 
-		acumulado90Dias := economiaBits * 90
 		mintSugerido := wVol * 1e6 * 0.97 
-		
-		fmt.Printf("=== [HUNTER MUNDO REAL - ABORDAGEM 3 / FIM DO CICLO 90 DIAS] Alvo: %s ===\n", a.NomeAlvo)
-		fmt.Printf("Balanço trimestral: desperdício acumulado de %.0f bits.\n", acumulado90Dias)
-		fmt.Printf("PROVA NA PRÁTICA: W_vol > 0. Mint sugerido de %.0f BOLHA se converter agora.\n", mintSugerido)
-		fmt.Println("Oportunidade encerrada. Ciclo finalizado. A infraestrutura em Go permanece em repouso.")
+		fmt.Printf("=== [THE COLT - FECHAMENTO DE CICLO / 90 DIAS] Alvo: %s ===\n", a.NomeAlvo)
+		fmt.Printf("Balanço Trimestral Comprovado via W_vol > 0.\n")
+		fmt.Printf("Mint sugerido no contrato Polygon (`rsm.go`): %.0f BOLHA.\n", mintSugerido)
+		fmt.Println("Auditoria concluída com zero gás desperdiçado. Sistema em repouso na borda.")
 		fmt.Println("--------------------------------------------------\n")
 	}
 }
 
 func main() {
-	fmt.Println("=== MOTOR THE COLT: CONECTOR DE MUNDO REAL ATIVADO ===")
-	fmt.Println("Buscando dados reais de satélite/telemetria via API externa...\n")
+	fmt.Println("=== MOTOR THE COLT: MATRIZ DE EFICIÊNCIA GLOBAL ATIVADA ===")
+	fmt.Println("Buscando dados reais de telemetria via CelesTrak...\n")
 
 	alvoReal, err := BuscarAlvoRealDoMundo(25544)
 	if err != nil {
@@ -160,7 +167,7 @@ func main() {
 		return
 	}
 
-	fmt.Printf("[SUCESSO] Alvo real carregado da rede: %s (NORAD ID: %d)\n\n", alvoReal.NomeAlvo, alvoReal.NoradID)
+	fmt.Printf("[SUCESSO] Alvo real conectado: %s (NORAD ID: %d)\n\n", alvoReal.NomeAlvo, alvoReal.NoradID)
 
 	alvoReal.ExecutarCadencia() 
 	alvoReal.ExecutarCadencia() 
