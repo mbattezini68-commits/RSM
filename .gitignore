@@ -1,2 +1,6 @@
-.env
-bin/
+vault.json
+vault_real.json
+vault_battezini.json
+*.pem
+*.log
+.~lock*
